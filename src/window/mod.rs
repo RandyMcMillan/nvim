@@ -6,7 +6,7 @@ mod update_loop;
 mod window_wrapper;
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 
 #[cfg(target_os = "linux")]
 use std::env;
@@ -14,7 +14,7 @@ use std::env;
 use winit::{
     dpi::{PhysicalSize, Size},
     event_loop::{ActiveEventLoop, EventLoop},
-    window::{Icon, Theme, Window},
+    window::{Cursor, Icon, Theme, Window},
 };
 
 #[cfg(target_os = "macos")]
@@ -28,6 +28,9 @@ use winit::platform::windows::WindowAttributesExtWindows;
 
 #[cfg(target_os = "macos")]
 use winit::platform::macos::EventLoopBuilderExtMacOS;
+
+#[cfg(target_os = "macos")]
+use macos::register_file_handler;
 
 use image::{load_from_memory, GenericImageView, Pixel};
 use keyboard_manager::KeyboardManager;
@@ -120,7 +123,7 @@ pub fn create_event_loop() -> EventLoop<UserEvent> {
     builder.with_default_menu(false);
     let event_loop = builder.build().expect("Failed to create winit event loop");
     #[cfg(target_os = "macos")]
-    crate::window::macos::register_file_handler();
+    register_file_handler();
     #[allow(clippy::let_and_return)]
     event_loop
 }
@@ -137,12 +140,22 @@ pub fn create_window(event_loop: &ActiveEventLoop, maximized: bool, title: &str)
         _ => None,
     };
 
+    let mouse_cursor_icon = cmd_line_settings.mouse_cursor_icon;
+
     let window_attributes = Window::default_attributes()
         .with_title(title)
-        .with_window_icon(Some(icon))
+        .with_cursor(Cursor::Icon(mouse_cursor_icon.parse()))
         .with_maximized(maximized)
         .with_transparent(true)
         .with_visible(false);
+
+    #[cfg(target_family = "unix")]
+    let window_attributes = window_attributes.with_window_icon(Some(icon));
+
+    #[cfg(target_os = "windows")]
+    let window_attributes = window_attributes
+        .with_window_icon(Some(icon.clone()))
+        .with_taskbar_icon(Some(icon));
 
     #[cfg(target_os = "windows")]
     let window_attributes = if !cmd_line_settings.opengl {
@@ -183,7 +196,7 @@ pub fn create_window(event_loop: &ActiveEventLoop, maximized: bool, title: &str)
     let window_attributes = {
         if env::var("WAYLAND_DISPLAY").is_ok() {
             let app_id = &cmd_line_settings.wayland_app_id;
-            WindowAttributesExtWayland::with_name(window_attributes, "neovide", app_id.clone())
+            WindowAttributesExtWayland::with_name(window_attributes, app_id.clone(), "neovide")
         } else {
             let class = &cmd_line_settings.x11_wm_class;
             let instance = &cmd_line_settings.x11_wm_class_instance;
